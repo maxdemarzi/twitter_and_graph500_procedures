@@ -5,7 +5,6 @@ import org.neo4j.harness.ServerControls;
 import org.neo4j.harness.TestServerBuilders;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.neo4j.driver.v1.Values.parameters;
 
 public class WCCTest {
     private static ServerControls neo4j;

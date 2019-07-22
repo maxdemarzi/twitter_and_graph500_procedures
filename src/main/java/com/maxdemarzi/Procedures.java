@@ -110,7 +110,6 @@ public class Procedures {
         Roaring64NavigableMap seen = new Roaring64NavigableMap();
         Roaring64NavigableMap nextA = new Roaring64NavigableMap();
         Roaring64NavigableMap nextB = new Roaring64NavigableMap();
-        Iterator<Long> iterator;
 
         RelationshipTraversalCursor rels = cursors.allocateRelationshipTraversalCursor();
         NodeCursor nodeCursor = cursors.allocateNodeCursor();
@@ -135,33 +134,10 @@ public class Procedures {
                     // Loop
                     while(true) {
                         // Next even Hop
-                        nextB.andNot(seen);
-                        seen.or(nextB);
-                        nextA.clear();
-
-                        iterator = nextB.iterator();
-                        while (iterator.hasNext()) {
-                            read.singleNode(iterator.next(), nodeCursor);
-                            nodeCursor.next();
-                            nodeCursor.allRelationships(rels);
-                            while (rels.next()) {
-                                nextA.add(rels.neighbourNodeReference());
-                            }
-                        }
+                        nextHop(read, seen, nextA, nextB, rels, nodeCursor);
 
                         // Next odd Hop
-                        nextA.andNot(seen);
-                        seen.or(nextA);
-                        nextB.clear();
-                        iterator = nextA.iterator();
-                        while (iterator.hasNext()) {
-                            read.singleNode(iterator.next(), nodeCursor);
-                            nodeCursor.next();
-                            nodeCursor.allRelationships(rels);
-                            while (rels.next()) {
-                                nextB.add(rels.neighbourNodeReference());
-                            }
-                        }
+                        nextHop(read, seen, nextB, nextA, rels, nodeCursor);
 
                         if(nextB.isEmpty()) { break; }
                     }
@@ -172,21 +148,21 @@ public class Procedures {
         }
     }
 
-    private boolean nextHop(Roaring64NavigableMap seen, Roaring64NavigableMap nextA, Roaring64NavigableMap nextB) {
+    private void nextHop(Read read, Roaring64NavigableMap seen, Roaring64NavigableMap nextA, Roaring64NavigableMap nextB, RelationshipTraversalCursor rels, NodeCursor nodeCursor) {
         Iterator<Long> iterator;
-        long nodeId;
-        Node node;
         nextB.andNot(seen);
         seen.or(nextB);
         nextA.clear();
+
         iterator = nextB.iterator();
         while (iterator.hasNext()) {
-            nodeId = iterator.next();
-            node = db.getNodeById(nodeId);
-            for (Relationship r : node.getRelationships()) {
-                nextA.add(r.getOtherNodeId(nodeId));
+            read.singleNode(iterator.next(), nodeCursor);
+            nodeCursor.next();
+            nodeCursor.allRelationships(rels);
+            while (rels.next()) {
+                nextA.add(rels.neighbourNodeReference());
             }
         }
-        return nextA.isEmpty();
     }
+
 }
