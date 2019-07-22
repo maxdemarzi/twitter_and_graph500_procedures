@@ -1,6 +1,8 @@
 twitter_and_graph500_procedures.iml
 .idea
 target
+.DS_Store
+dependency-reduced-pom.xml
 
 # Compiled class file
 *.class
