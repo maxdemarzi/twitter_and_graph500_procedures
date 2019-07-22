@@ -116,6 +116,8 @@ public class Procedures {
             Roaring64NavigableMap nextA = new Roaring64NavigableMap();
             Roaring64NavigableMap nextB = new Roaring64NavigableMap();
 
+            seen.add(startingNode.getId());
+
             RelationshipTraversalCursor rels = cursors.allocateRelationshipTraversalCursor();
             NodeCursor nodeCursor = cursors.allocateNodeCursor();
 
@@ -203,19 +205,19 @@ public class Procedures {
         }
     }
 
-    private void nextHop(Read read, Roaring64NavigableMap seen, Roaring64NavigableMap nextA, Roaring64NavigableMap nextB, RelationshipTraversalCursor rels, NodeCursor nodeCursor) {
+    private void nextHop(Read read, Roaring64NavigableMap seen, Roaring64NavigableMap next, Roaring64NavigableMap current, RelationshipTraversalCursor rels, NodeCursor nodeCursor) {
         Iterator<Long> iterator;
-        nextB.andNot(seen);
-        seen.or(nextB);
-        nextA.clear();
+        current.andNot(seen);
+        seen.or(current);
+        next.clear();
 
-        iterator = nextB.iterator();
+        iterator = current.iterator();
         while (iterator.hasNext()) {
             read.singleNode(iterator.next(), nodeCursor);
             nodeCursor.next();
             nodeCursor.allRelationships(rels);
             while (rels.next()) {
-                nextA.add(rels.neighbourNodeReference());
+                next.add(rels.neighbourNodeReference());
             }
         }
     }
