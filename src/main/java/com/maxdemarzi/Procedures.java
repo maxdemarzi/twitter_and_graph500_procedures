@@ -30,12 +30,11 @@ public class Procedures {
 
 
     @Procedure(name = "com.maxdemarzi.knn", mode = Mode.READ)
-    @Description("com.maxdemarzi.knn(String id, Long distance)")
-    public Stream<LongResult> knn(@Name("id") String id, @Name(value = "distance", defaultValue = "1") Long distance) {
+    @Description("com.maxdemarzi.knn(Node node, Long distance)")
+    public Stream<LongResult> knn(@Name("startingNode") Node startingNode, @Name(value = "distance", defaultValue = "1") Long distance) {
         if (distance < 1) return Stream.empty();
 
-        Node myNode = db.findNode(Labels.MyNode, ID, id);
-        if (myNode == null) {
+        if (startingNode == null) {
             return Stream.empty();
         } else {
 
@@ -45,12 +44,12 @@ public class Procedures {
             Roaring64NavigableMap nextA = new Roaring64NavigableMap();
             Roaring64NavigableMap nextB = new Roaring64NavigableMap();
 
-            long nodeId = myNode.getId();
+            long nodeId = startingNode.getId();
             seen.add(nodeId);
             Iterator<Long> iterator;
 
             // First Hop
-            for (Relationship r : myNode.getRelationships()) {
+            for (Relationship r : startingNode.getRelationships()) {
                 nextB.add(r.getOtherNodeId(nodeId));
             }
 
@@ -91,7 +90,7 @@ public class Procedures {
                 seen.or(nextB);
             }
             // remove starting node
-            seen.removeLong(myNode.getId());
+            seen.removeLong(startingNode.getId());
 
             return Stream.of(new LongResult(seen.getLongCardinality()));
         }
@@ -99,9 +98,9 @@ public class Procedures {
 
     @Procedure(name = "com.maxdemarzi.wcc", mode = Mode.READ)
     @Description("com.maxdemarzi.wcc(String id)")
-    public Stream<LongResult> wcc(@Name("id") String id) {
-        Node myNode = db.findNode(Labels.MyNode, ID, id);
-        if (myNode == null) {
+    public Stream<LongResult> wcc(@Name("startingNode") Node startingNode) {
+
+        if (startingNode == null) {
             return Stream.empty();
         } else {
 
@@ -111,12 +110,12 @@ public class Procedures {
             Roaring64NavigableMap nextA = new Roaring64NavigableMap();
             Roaring64NavigableMap nextB = new Roaring64NavigableMap();
 
-            long nodeId = myNode.getId();
+            long nodeId = startingNode.getId();
             seen.add(nodeId);
             Iterator<Long> iterator;
 
             // First Hop
-            for (Relationship r : myNode.getRelationships()) {
+            for (Relationship r : startingNode.getRelationships()) {
                 nextB.add(r.getOtherNodeId(nodeId));
             }
 
@@ -131,7 +130,7 @@ public class Procedures {
             seen.or(nextB);
 
             // remove starting node
-            seen.removeLong(myNode.getId());
+            seen.removeLong(startingNode.getId());
 
             return Stream.of(new LongResult(seen.getLongCardinality()));
         }
