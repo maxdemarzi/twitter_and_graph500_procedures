@@ -1,16 +1,17 @@
 package com.maxdemarzi;
 
 import com.maxdemarzi.results.LongResult;
-import com.maxdemarzi.schema.Labels;
 import org.neo4j.graphdb.*;
+import org.neo4j.internal.kernel.api.*;
+import org.neo4j.kernel.api.KernelTransaction;
+import org.neo4j.kernel.impl.core.ThreadToStatementContextBridge;
+import org.neo4j.kernel.internal.GraphDatabaseAPI;
 import org.neo4j.logging.Log;
 import org.neo4j.procedure.*;
 import org.roaringbitmap.longlong.Roaring64NavigableMap;
 
 import java.util.Iterator;
 import java.util.stream.Stream;
-
-import static com.maxdemarzi.schema.Properties.ID;
 
 public class Procedures {
 
@@ -97,42 +98,77 @@ public class Procedures {
     }
 
     @Procedure(name = "com.maxdemarzi.wcc", mode = Mode.READ)
-    @Description("com.maxdemarzi.wcc(String id)")
-    public Stream<LongResult> wcc(@Name("startingNode") Node startingNode) {
+    @Description("com.maxdemarzi.wcc()")
+    public Stream<LongResult> wcc() {
+        Long components = 0L;
+        DependencyResolver dependencyResolver = ((GraphDatabaseAPI)db).getDependencyResolver();
+        final ThreadToStatementContextBridge ctx = dependencyResolver.resolveDependency(ThreadToStatementContextBridge.class, DependencyResolver.SelectionStrategy.FIRST);
+        KernelTransaction ktx = ctx.getKernelTransactionBoundToThisThread(true);
+        CursorFactory cursors = ktx.cursors();
+        Read read = ktx.dataRead();
 
-        if (startingNode == null) {
-            return Stream.empty();
-        } else {
+        Roaring64NavigableMap seen = new Roaring64NavigableMap();
+        Roaring64NavigableMap nextA = new Roaring64NavigableMap();
+        Roaring64NavigableMap nextB = new Roaring64NavigableMap();
+        Iterator<Long> iterator;
 
-            Node node;
-            // Initialize bitmaps for iteration
-            Roaring64NavigableMap seen = new Roaring64NavigableMap();
-            Roaring64NavigableMap nextA = new Roaring64NavigableMap();
-            Roaring64NavigableMap nextB = new Roaring64NavigableMap();
+        RelationshipTraversalCursor rels = cursors.allocateRelationshipTraversalCursor();
+        NodeCursor nodeCursor = cursors.allocateNodeCursor();
 
-            long nodeId = startingNode.getId();
-            seen.add(nodeId);
-            Iterator<Long> iterator;
+        try ( NodeCursor nodes = cursors.allocateNodeCursor() ) {
+            // when
+            read.allNodesScan(nodes);
+            while (nodes.next()) {
+                if (!seen.contains(nodes.nodeReference())) {
+                    components++;
+                    nextA.clear();
+                    nextB.clear();
 
-            // First Hop
-            for (Relationship r : startingNode.getRelationships()) {
-                nextB.add(r.getOtherNodeId(nodeId));
+                    seen.add(nodes.nodeReference());
+
+                    // First Hop
+                    nodes.allRelationships(rels);
+                    while (rels.next()) {
+                        nextB.add(rels.neighbourNodeReference());
+                    }
+
+                    // Loop
+                    while(true) {
+                        // Next even Hop
+                        nextB.andNot(seen);
+                        seen.or(nextB);
+                        nextA.clear();
+
+                        iterator = nextB.iterator();
+                        while (iterator.hasNext()) {
+                            read.singleNode(iterator.next(), nodeCursor);
+                            nodeCursor.next();
+                            nodeCursor.allRelationships(rels);
+                            while (rels.next()) {
+                                nextA.add(rels.neighbourNodeReference());
+                            }
+                        }
+
+                        // Next odd Hop
+                        nextA.andNot(seen);
+                        seen.or(nextA);
+                        nextB.clear();
+                        iterator = nextA.iterator();
+                        while (iterator.hasNext()) {
+                            read.singleNode(iterator.next(), nodeCursor);
+                            nodeCursor.next();
+                            nodeCursor.allRelationships(rels);
+                            while (rels.next()) {
+                                nextB.add(rels.neighbourNodeReference());
+                            }
+                        }
+
+                        if(nextB.isEmpty()) { break; }
+                    }
+                }
             }
 
-            while (true) {
-                // next even Hop
-                if (nextHop(seen, nextA, nextB)) break;
-                // next odd Hop
-                if (nextHop(seen, nextB, nextA)) break;
-            }
-
-            seen.or(nextA);
-            seen.or(nextB);
-
-            // remove starting node
-            seen.removeLong(startingNode.getId());
-
-            return Stream.of(new LongResult(seen.getLongCardinality()));
+            return Stream.of(new LongResult(components));
         }
     }
 
