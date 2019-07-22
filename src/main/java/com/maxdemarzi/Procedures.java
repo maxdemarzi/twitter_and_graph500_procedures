@@ -97,6 +97,61 @@ public class Procedures {
         }
     }
 
+
+    @Procedure(name = "com.maxdemarzi.knn2", mode = Mode.READ)
+    @Description("com.maxdemarzi.knn2(Node node, Long distance)")
+    public Stream<LongResult> knn2(@Name("startingNode") Node startingNode, @Name(value = "distance", defaultValue = "1") Long distance) {
+        if (distance < 1) return Stream.empty();
+
+        if (startingNode == null) {
+            return Stream.empty();
+        } else {
+            DependencyResolver dependencyResolver = ((GraphDatabaseAPI)db).getDependencyResolver();
+            final ThreadToStatementContextBridge ctx = dependencyResolver.resolveDependency(ThreadToStatementContextBridge.class, DependencyResolver.SelectionStrategy.FIRST);
+            KernelTransaction ktx = ctx.getKernelTransactionBoundToThisThread(true);
+            CursorFactory cursors = ktx.cursors();
+            Read read = ktx.dataRead();
+
+            Roaring64NavigableMap seen = new Roaring64NavigableMap();
+            Roaring64NavigableMap nextA = new Roaring64NavigableMap();
+            Roaring64NavigableMap nextB = new Roaring64NavigableMap();
+
+            RelationshipTraversalCursor rels = cursors.allocateRelationshipTraversalCursor();
+            NodeCursor nodeCursor = cursors.allocateNodeCursor();
+
+            read.singleNode(startingNode.getId(), nodeCursor);
+            nodeCursor.next();
+
+            // First Hop
+            nodeCursor.allRelationships(rels);
+            while (rels.next()) {
+                nextB.add(rels.neighbourNodeReference());
+            }
+
+            for (int i = 1; i < distance; i++) {
+                // Next even Hop
+                nextHop(read, seen, nextA, nextB, rels, nodeCursor);
+
+                i++;
+                if (i < distance) {
+                    // Next odd Hop
+                    nextHop(read, seen, nextB, nextA, rels, nodeCursor);
+                }
+            }
+
+            if ((distance % 2) == 0) {
+                seen.or(nextA);
+            } else {
+                seen.or(nextB);
+            }
+
+            // remove starting node
+            seen.removeLong(startingNode.getId());
+
+            return Stream.of(new LongResult(seen.getLongCardinality()));
+        }
+    }
+
     @Procedure(name = "com.maxdemarzi.wcc", mode = Mode.READ)
     @Description("com.maxdemarzi.wcc()")
     public Stream<LongResult> wcc() {
