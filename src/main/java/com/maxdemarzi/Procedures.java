@@ -64,7 +64,7 @@ public class Procedures {
                     nodeId = iterator.next();
                     node = db.getNodeById(nodeId);
                     for (Relationship r : node.getRelationships()) {
-                        nextA.add(r.getOtherNodeId(nodeId));
+                        nextA.add(r.getEndNodeId());
                     }
                 }
 
@@ -79,7 +79,7 @@ public class Procedures {
                         nodeId = iterator.next();
                         node = db.getNodeById(nodeId);
                         for (Relationship r : node.getRelationships()) {
-                            nextB.add(r.getOtherNodeId(nodeId));
+                            nextB.add(r.getEndNodeId());
                         }
                     }
                 }
@@ -127,7 +127,7 @@ public class Procedures {
             // First Hop
             nodeCursor.allRelationships(rels);
             while (rels.next()) {
-                nextB.add(rels.neighbourNodeReference());
+                nextB.add(rels.targetNodeReference());
             }
 
             for (int i = 1; i < distance; i++) {
@@ -217,7 +217,7 @@ public class Procedures {
             nodeCursor.next();
             nodeCursor.allRelationships(rels);
             while (rels.next()) {
-                next.add(rels.neighbourNodeReference());
+                next.add(rels.targetNodeReference());
             }
         }
     }
