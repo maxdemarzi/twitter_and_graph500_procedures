@@ -11,6 +11,8 @@ import org.neo4j.procedure.*;
 import org.roaringbitmap.longlong.Roaring64NavigableMap;
 
 import java.util.Iterator;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 public class Procedures {
@@ -24,6 +26,9 @@ public class Procedures {
     // standard log, normally found under `data/log/neo4j.log`
     @Context
     public Log log;
+
+    // How many CPUs do I have available?
+    private static final int THREADS = Runtime.getRuntime().availableProcessors();
 
     /*
     match (n1:MyNode)-[:MyEdge*.." + str(depth) + "]->(n2:MyNode) where n1.id={root} return count(distinct n2)
@@ -153,6 +158,104 @@ public class Procedures {
             return Stream.of(new LongResult(seen.getLongCardinality()));
         }
     }
+
+
+
+
+    @Procedure(name = "com.maxdemarzi.parallel.knn2", mode = Mode.READ)
+    @Description("com.maxdemarzi.parallel.knn2(Node node, Long distance)")
+    public Stream<LongResult> parallelKnn2(@Name("startingNode") Node startingNode, @Name(value = "distance", defaultValue = "1") Long distance) {
+        if (distance < 1) return Stream.empty();
+
+        if (startingNode == null) {
+            return Stream.empty();
+        } else {
+            DependencyResolver dependencyResolver = ((GraphDatabaseAPI) db).getDependencyResolver();
+            final ThreadToStatementContextBridge ctx = dependencyResolver.resolveDependency(ThreadToStatementContextBridge.class, DependencyResolver.SelectionStrategy.FIRST);
+            KernelTransaction ktx = ctx.getKernelTransactionBoundToThisThread(true);
+            CursorFactory cursors = ktx.cursors();
+            Read read = ktx.dataRead();
+
+            ExecutorService service = Executors.newFixedThreadPool(THREADS);
+            Roaring64NavigableMap seen = new Roaring64NavigableMap();
+
+            Phaser ph = new Phaser(1);
+
+            Roaring64NavigableMap[] nextA = new Roaring64NavigableMap[THREADS];
+            Roaring64NavigableMap[] nextB = new Roaring64NavigableMap[THREADS];
+
+            for (int i = 0; i < THREADS; ++i) {
+                nextA[i] = new Roaring64NavigableMap();
+                nextB[i] = new Roaring64NavigableMap();
+            }
+
+            seen.add(startingNode.getId());
+
+            RelationshipTraversalCursor rels = cursors.allocateRelationshipTraversalCursor();
+            NodeCursor nodeCursor = cursors.allocateNodeCursor();
+
+            read.singleNode(startingNode.getId(), nodeCursor);
+            nodeCursor.next();
+
+            // First Hop
+            AtomicLong index = new AtomicLong(0);
+            nodeCursor.allRelationships(rels);
+            while (rels.next()) {
+                nextB[(int)(index.getAndIncrement() % THREADS)].add(rels.targetNodeReference());
+            }
+
+
+            // Next even Hop
+            //nextHop(read, seen, nextA, nextB, rels, nodeCursor);
+            for (int i = 1; i < distance; i++) {
+
+                // Next even Hop
+                for (int j = 0; j < THREADS; j++) {
+                    nextB[j].andNot(seen);
+                    seen.or(nextB[j]);
+                    nextA[j].clear();
+                    service.submit(new NextNeighbors(db, log, nextA[j], nextB[j], ph));
+                }
+
+                // Wait until all have finished
+                ph.arriveAndAwaitAdvance();
+
+                i++;
+                if (i < distance) {
+                    // Next odd Hop
+                    for (int j = 0; j < THREADS; j++) {
+                        nextA[j].andNot(seen);
+                        seen.or(nextA[j]);
+                        nextB[j].clear();
+                        service.submit(new NextNeighbors(db, log, nextB[j], nextA[j], ph));
+                    }
+
+                    // Wait until all have finished
+                    ph.arriveAndAwaitAdvance();
+
+                }
+            }
+
+            if ((distance % 2) == 0) {
+                for (int j = 0; j < THREADS; j++) {
+                    seen.or(nextA[j]);
+                }
+            } else {
+                for (int j = 0; j < THREADS; j++) {
+                    seen.or(nextB[j]);
+                }
+            }
+
+            ph.arriveAndDeregister();
+
+            // remove starting node
+            seen.removeLong(startingNode.getId());
+
+            return Stream.of(new LongResult(seen.getLongCardinality()));
+
+        }
+    }
+
 
     private void nextHop(Read read, Roaring64NavigableMap seen, Roaring64NavigableMap next, Roaring64NavigableMap current, RelationshipTraversalCursor rels, NodeCursor nodeCursor) {
         Iterator<Long> iterator;

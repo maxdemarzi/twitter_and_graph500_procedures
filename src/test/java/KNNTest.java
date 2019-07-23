@@ -41,6 +41,44 @@ public class KNNTest {
         }
     }
 
+    @Test
+    void shouldCountKNN2()
+    {
+        // In a try-block, to make sure we close the driver after the test
+        try( Driver driver = GraphDatabase.driver( neo4j.boltURI() , Config.build().withoutEncryption().toConfig() ) )
+        {
+
+            // Given I've started Neo4j with the procedure
+            //       which my 'neo4j' rule above does.
+            Session session = driver.session();
+
+            // When I use the procedure
+            StatementResult result = session.run( "MATCH (node:User{username:'User-1'}) WITH node CALL com.maxdemarzi.knn2(node, 4) YIELD value RETURN value" );
+
+            // Then I should get what I expect
+            assertThat(result.single().get("value").asInt()).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void shouldCountParallelKNN()
+    {
+        // In a try-block, to make sure we close the driver after the test
+        try( Driver driver = GraphDatabase.driver( neo4j.boltURI() , Config.build().withoutEncryption().toConfig() ) )
+        {
+
+            // Given I've started Neo4j with the procedure
+            //       which my 'neo4j' rule above does.
+            Session session = driver.session();
+
+            // When I use the procedure
+            StatementResult result = session.run( "MATCH (node:User{username:'User-1'}) WITH node CALL com.maxdemarzi.parallel.knn2(node, 4) YIELD value RETURN value" );
+
+            // Then I should get what I expect
+            assertThat(result.single().get("value").asInt()).isEqualTo(2);
+        }
+    }
+
     private static final String MODEL_STATEMENT =
             "CREATE (n1:User { username:'User-1' })" +
                     "CREATE (n2:User { username:'User-2' })" +
