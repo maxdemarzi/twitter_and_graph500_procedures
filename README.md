@@ -20,11 +20,10 @@ Restart your Neo4j Server. Your new Stored Procedures are available:
 
     CALL com.maxdemarzi.knn(Node node, Long distance);
     CALL com.maxdemarzi.knn2(Node node, Long distance);
-    CALL com.maxdemarzi.wcc();
     
 Call them with:
         
     MATCH (node:MyNode {id:{root})) WITH node CALL com.maxdemarzi.knn(node, 3) YIELD value RETURN value;
     MATCH (node:MyNode {id:{root})) WITH node CALL com.maxdemarzi.knn2(node, 3) YIELD value RETURN value;    
-    CALL com.maxdemarzi.wcc();
+
     

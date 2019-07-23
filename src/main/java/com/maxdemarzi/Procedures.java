@@ -154,57 +154,6 @@ public class Procedures {
         }
     }
 
-    @Procedure(name = "com.maxdemarzi.wcc", mode = Mode.READ)
-    @Description("com.maxdemarzi.wcc()")
-    public Stream<LongResult> wcc() {
-        Long components = 0L;
-        DependencyResolver dependencyResolver = ((GraphDatabaseAPI)db).getDependencyResolver();
-        final ThreadToStatementContextBridge ctx = dependencyResolver.resolveDependency(ThreadToStatementContextBridge.class, DependencyResolver.SelectionStrategy.FIRST);
-        KernelTransaction ktx = ctx.getKernelTransactionBoundToThisThread(true);
-        CursorFactory cursors = ktx.cursors();
-        Read read = ktx.dataRead();
-
-        Roaring64NavigableMap seen = new Roaring64NavigableMap();
-        Roaring64NavigableMap nextA = new Roaring64NavigableMap();
-        Roaring64NavigableMap nextB = new Roaring64NavigableMap();
-
-        RelationshipTraversalCursor rels = cursors.allocateRelationshipTraversalCursor();
-        NodeCursor nodeCursor = cursors.allocateNodeCursor();
-
-        try ( NodeCursor nodes = cursors.allocateNodeCursor() ) {
-            // when
-            read.allNodesScan(nodes);
-            while (nodes.next()) {
-                if (!seen.contains(nodes.nodeReference())) {
-                    components++;
-                    nextA.clear();
-                    nextB.clear();
-
-                    seen.add(nodes.nodeReference());
-
-                    // First Hop
-                    nodes.allRelationships(rels);
-                    while (rels.next()) {
-                        nextB.add(rels.neighbourNodeReference());
-                    }
-
-                    // Loop
-                    while(true) {
-                        // Next even Hop
-                        nextHop(read, seen, nextA, nextB, rels, nodeCursor);
-
-                        // Next odd Hop
-                        nextHop(read, seen, nextB, nextA, rels, nodeCursor);
-
-                        if(nextB.isEmpty()) { break; }
-                    }
-                }
-            }
-
-            return Stream.of(new LongResult(components));
-        }
-    }
-
     private void nextHop(Read read, Roaring64NavigableMap seen, Roaring64NavigableMap next, Roaring64NavigableMap current, RelationshipTraversalCursor rels, NodeCursor nodeCursor) {
         Iterator<Long> iterator;
         current.andNot(seen);
