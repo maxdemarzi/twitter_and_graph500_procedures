@@ -8,6 +8,7 @@ import org.neo4j.kernel.impl.core.ThreadToStatementContextBridge;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
 import org.neo4j.logging.Log;
 import org.neo4j.procedure.*;
+import org.roaringbitmap.longlong.LongIterator;
 import org.roaringbitmap.longlong.Roaring64NavigableMap;
 
 import java.util.Iterator;
@@ -176,15 +177,17 @@ public class Procedures {
             CursorFactory cursors = ktx.cursors();
             Read read = ktx.dataRead();
 
+            LongIterator iterator;
+
             ExecutorService service = Executors.newFixedThreadPool(THREADS);
             Roaring64NavigableMap seen = new Roaring64NavigableMap();
 
             Phaser ph = new Phaser(1);
 
-            Roaring64NavigableMap[] nextA = new Roaring64NavigableMap[THREADS];
-            Roaring64NavigableMap[] nextB = new Roaring64NavigableMap[THREADS];
+            Roaring64NavigableMap[] nextA = new Roaring64NavigableMap[THREADS + 1];
+            Roaring64NavigableMap[] nextB = new Roaring64NavigableMap[THREADS + 1];
 
-            for (int i = 0; i < THREADS; ++i) {
+            for (int i = 0; i < (THREADS + 1); ++i) {
                 nextA[i] = new Roaring64NavigableMap();
                 nextB[i] = new Roaring64NavigableMap();
             }
@@ -209,23 +212,52 @@ public class Procedures {
             //nextHop(read, seen, nextA, nextB, rels, nodeCursor);
             for (int i = 1; i < distance; i++) {
 
+                // Combine next (after initial)
+                if (i > 1) {
+                    for (int j = 0; j < THREADS; j++) {
+                        nextB[THREADS].or(nextB[j]);
+                        nextB[j].clear();
+                    }
+
+                    // Redistribute next
+                    index.set(0);
+                    nextB[THREADS].andNot(seen);
+                    seen.or(nextB[THREADS]);
+                    iterator = nextB[THREADS].getLongIterator();
+                    while (iterator.hasNext()) {
+                        nextB[(int)(index.getAndIncrement() % THREADS)].add(iterator.next());
+                    }
+                }
+
                 // Next even Hop
                 for (int j = 0; j < THREADS; j++) {
-                    nextB[j].andNot(seen);
-                    seen.or(nextB[j]);
                     nextA[j].clear();
                     service.submit(new NextNeighbors(db, log, nextA[j], nextB[j], ph));
                 }
 
                 // Wait until all have finished
                 ph.arriveAndAwaitAdvance();
-
+                
                 i++;
                 if (i < distance) {
+
+                    // Combine next
+                    for (int j = 0; j < THREADS; j++) {
+                        nextA[THREADS].or(nextA[j]);
+                        nextA[j].clear();
+                    }
+
+                    // Redistribute next
+                    index.set(0);
+                    nextA[THREADS].andNot(seen);
+                    seen.or(nextA[THREADS]);
+                    iterator = nextA[THREADS].getLongIterator();
+                    while (iterator.hasNext()) {
+                        nextA[(int)(index.getAndIncrement() % THREADS)].add(iterator.next());
+                    }
+
                     // Next odd Hop
                     for (int j = 0; j < THREADS; j++) {
-                        nextA[j].andNot(seen);
-                        seen.or(nextA[j]);
                         nextB[j].clear();
                         service.submit(new NextNeighbors(db, log, nextB[j], nextA[j], ph));
                     }
