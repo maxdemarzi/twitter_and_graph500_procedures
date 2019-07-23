@@ -51,7 +51,7 @@ public class Procedures {
 
             // First Hop
             for (Relationship r : startingNode.getRelationships()) {
-                nextB.add(r.getOtherNodeId(nodeId));
+                nextB.add(r.getEndNodeId());
             }
 
             for (int i = 1; i < distance; i++) {

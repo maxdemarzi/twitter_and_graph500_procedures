@@ -34,7 +34,7 @@ public class KNNTest {
             Session session = driver.session();
 
             // When I use the procedure
-            StatementResult result = session.run( "MATCH (node:User{username:'User-1'}) WITH node CALL com.maxdemarzi.knn2(node, 4) YIELD value RETURN value" );
+            StatementResult result = session.run( "MATCH (node:User{username:'User-1'}) WITH node CALL com.maxdemarzi.knn(node, 4) YIELD value RETURN value" );
 
             // Then I should get what I expect
             assertThat(result.single().get("value").asInt()).isEqualTo(2);
