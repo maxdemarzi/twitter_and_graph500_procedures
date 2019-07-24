@@ -8,8 +8,7 @@ import org.neo4j.kernel.impl.core.ThreadToStatementContextBridge;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
 import org.neo4j.logging.Log;
 import org.neo4j.procedure.*;
-import org.roaringbitmap.longlong.LongIterator;
-import org.roaringbitmap.longlong.Roaring64NavigableMap;
+import org.roaringbitmap.longlong.*;
 
 import java.util.Iterator;
 import java.util.concurrent.*;
@@ -201,7 +200,7 @@ public class Procedures {
             nodeCursor.next();
 
             // First Hop
-            AtomicLong index = new AtomicLong(0);
+            final AtomicLong index = new AtomicLong(0);
             nodeCursor.allRelationships(rels);
             while (rels.next()) {
                 nextB[(int)(index.getAndIncrement() % THREADS)].add(rels.targetNodeReference());
@@ -223,10 +222,9 @@ public class Procedures {
                     index.set(0);
                     nextB[THREADS].andNot(seen);
                     seen.or(nextB[THREADS]);
-                    iterator = nextB[THREADS].getLongIterator();
-                    while (iterator.hasNext()) {
-                        nextB[(int)(index.getAndIncrement() % THREADS)].add(iterator.next());
-                    }
+
+                    nextB[THREADS].forEach(l -> nextB[(int)(index.getAndIncrement() % THREADS)].add(l));
+
                 }
 
                 // Next even Hop
@@ -251,11 +249,8 @@ public class Procedures {
                     index.set(0);
                     nextA[THREADS].andNot(seen);
                     seen.or(nextA[THREADS]);
-                    iterator = nextA[THREADS].getLongIterator();
-                    while (iterator.hasNext()) {
-                        nextA[(int)(index.getAndIncrement() % THREADS)].add(iterator.next());
-                    }
-
+                    nextA[THREADS].forEach(l -> nextA[(int)(index.getAndIncrement() % THREADS)].add(l));
+                    
                     // Next odd Hop
                     for (int j = 0; j < THREADS; j++) {
                         nextB[j].clear();

@@ -7,7 +7,7 @@ import org.neo4j.kernel.api.KernelTransaction;
 import org.neo4j.kernel.impl.core.ThreadToStatementContextBridge;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
 import org.neo4j.logging.Log;
-import org.roaringbitmap.longlong.Roaring64NavigableMap;
+import org.roaringbitmap.longlong.*;
 
 import java.util.Iterator;
 import java.util.concurrent.Phaser;
@@ -41,17 +41,14 @@ public class NextNeighbors implements Runnable {
             RelationshipTraversalCursor rels = cursors.allocateRelationshipTraversalCursor();
             NodeCursor nodeCursor = cursors.allocateNodeCursor();
 
-            Iterator<Long> iterator;
-
-            iterator = current.iterator();
-            while (iterator.hasNext()) {
-                read.singleNode(iterator.next(), nodeCursor);
+            current.forEach(l -> {
+                read.singleNode(l,nodeCursor);
                 nodeCursor.next();
                 nodeCursor.allRelationships(rels);
                 while (rels.next()) {
                     next.add(rels.targetNodeReference());
                 }
-            }
+            });
         }
         ph.arriveAndDeregister();
     }
